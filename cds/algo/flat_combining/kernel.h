@@ -232,7 +232,7 @@ namespace cds { namespace algo {
             atomics::atomic<unsigned int>  m_nCount;    ///< Total count of combining passes. Used as an age.
             publication_record_type*    m_pHead;        ///< Head of active publication list
             publication_record_type*    m_pAllocatedHead; ///< Head of allocated publication list
-            boost::thread_specific_ptr< publication_record_type > m_pThreadRec;   ///< Thread-local publication record
+            thread_local publication_record_type* m_pThreadRec;   ///< Thread-local publication record
             mutable global_lock_type    m_Mutex;        ///< Global mutex
             mutable stat                m_Stat;         ///< Internal statistics
             unsigned int const          m_nCompactFactor;    ///< Publication list compacting factor (the list will be compacted through \p %m_nCompactFactor combining passes)
@@ -258,22 +258,22 @@ namespace cds { namespace algo {
                 : m_nCount(0)
                 , m_pHead( nullptr )
                 , m_pAllocatedHead( nullptr )
-                , m_pThreadRec( tls_cleanup )
+                , m_pThreadRec( nullptr )
                 , m_nCompactFactor( static_cast<unsigned>( cds::beans::ceil2( static_cast<size_t>( nCompactFactor )) - 1 ))   // binary mask
                 , m_nCombinePassCount( nCombinePassCount )
             {
-                assert( m_pThreadRec.get() == nullptr );
+                assert( m_pThreadRec == nullptr );
                 publication_record_type* pRec = cxx11_allocator().New();
                 m_pAllocatedHead =
                     m_pHead = pRec;
-                m_pThreadRec.reset( pRec );
+                m_pThreadRec = pRec;
                 m_Stat.onCreatePubRecord();
             }
 
             /// Destroys the object and all publication records
             ~kernel()
             {
-                m_pThreadRec.reset();   // calls tls_cleanup()
+                tls_cleanup();
 
                 // delete all publication records
                 for ( publication_record* p = m_pAllocatedHead; p; ) {
@@ -290,11 +290,11 @@ namespace cds { namespace algo {
             */
             publication_record_type * acquire_record()
             {
-                publication_record_type * pRec = m_pThreadRec.get();
+                publication_record_type * pRec = m_pThreadRec;
                 if ( !pRec ) {
                     // Allocate new publication record
                     pRec = cxx11_allocator().New();
-                    m_pThreadRec.reset( pRec );
+                    m_pThreadRec = pRec;
                     m_Stat.onCreatePubRecord();
 
                     // Insert in allocated list
